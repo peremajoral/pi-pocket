@@ -36,11 +36,11 @@ function isTailscaleAddress(address: string): boolean {
     return first === 100 && second !== undefined && second >= 64 && second <= 127;
 }
 
-function ipv4Addresses(): { name: string; address: string }[] {
+function ipv4Addresses(): { name: string; address: string; netmask: string }[] {
     return Object.entries(networkInterfaces()).flatMap(([name, list]) =>
         (list ?? [])
             .filter((net) => net.family === "IPv4" && !net.internal)
-            .map((net) => ({ name, address: net.address })),
+            .map((net) => ({ name, address: net.address, netmask: net.netmask })),
     );
 }
 
@@ -51,12 +51,37 @@ export function lanAddresses(): string[] {
         .map((each) => each.address);
 }
 
+/** The address `tailscale ip -4` reports, when the CLI is here to ask. */
+function tailscaleCliAddress(): string | undefined {
+    const check = spawnSync("tailscale", ["ip", "-4"], { encoding: "utf8", timeout: 4_000 });
+
+    if (check.status !== 0) {
+        return undefined;
+    }
+
+    return check.stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => isTailscaleAddress(line));
+}
+
 /** This machine's Tailscale address, when Tailscale is connected. */
 export function tailscaleAddress(): string | undefined {
+    const fromCli = tailscaleCliAddress();
+
+    if (fromCli !== undefined) {
+        return fromCli;
+    }
+
     const candidates = ipv4Addresses().filter((each) => isTailscaleAddress(each.address));
 
-    return (candidates.find((each) => /tailscale|utun|tun/i.test(each.name)) ?? candidates[0])
-        ?.address;
+    // Tailscale gives its interface a /32, and its interface may be a plain utun: another tunnel on the machine, such as
+    // a VPN's utun0, can hold an address in the same range and must not win.
+    return (
+        candidates.find((each) => /^tailscale/i.test(each.name)) ??
+        candidates.find((each) => each.netmask === "255.255.255.255") ??
+        candidates[0]
+    )?.address;
 }
 
 /**
