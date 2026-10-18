@@ -444,16 +444,16 @@ export default function createBrowser(host: PocketHost) {
             }
 
             lines.push(where(page));
-            const content: (TextContent | ImageContent)[] = [
+            const output: (TextContent | ImageContent)[] = [
                 { type: "text", text: lines.join("\n") },
             ];
 
             if (image !== undefined) {
-                content.push(image);
+                output.push(image);
             }
 
             return {
-                content,
+                output,
                 ...(failed ? { isError: true } : {}),
                 details: {
                     action,
